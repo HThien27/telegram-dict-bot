@@ -64,21 +64,46 @@ def get_vietnamese_meanings(word: str):
         if len(resp) > 1 and resp[1]:
             for pos_group in resp[1]:
                 pos = pos_group[0]
+                
+                # Map part of speech to abbreviations
+                pos_mapped = {
+                    "noun": "N",
+                    "verb": "V",
+                    "adjective": "Adj",
+                    "adverb": "Adv",
+                    "pronoun": "Pro",
+                    "preposition": "Prep",
+                    "conjunction": "Conj",
+                    "interjection": "Int"
+                }.get(pos.lower(), pos.capitalize())
+                
                 words = pos_group[1][:3]
-                words_str = ", ".join(words).replace("*", "").replace("_", "").replace("`", "")
+                
+                # Viết hoa chữ cái đầu tiên của từng nghĩa
+                capitalized_words = []
+                for w in words:
+                    w = w.strip()
+                    if w:
+                        capitalized_words.append(w[0].upper() + w[1:])
+                
+                words_str = ", ".join(capitalized_words).replace("*", "").replace("_", "").replace("`", "")
                 words_str = unicodedata.normalize("NFC", words_str)
-                alternatives.append(f"• ({pos}) {words_str}")
+                alternatives.append(f"• ({pos_mapped}) {words_str}")
                 
         if alternatives:
             return alternatives
         else:
-            safe_vi = primary.replace("*", "").replace("_", "").replace("`", "")
+            safe_vi = primary.strip()
+            if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
+            safe_vi = safe_vi.replace("*", "").replace("_", "").replace("`", "")
             safe_vi = unicodedata.normalize("NFC", safe_vi)
             return [f"• Nghĩa: {safe_vi}"]
     except Exception:
         short = translate_text(word, "en", "vi")
         if short and short.lower() != word.lower():
-            safe_vi = short.replace("*", "").replace("_", "").replace("`", "")
+            safe_vi = short.strip()
+            if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
+            safe_vi = safe_vi.replace("*", "").replace("_", "").replace("`", "")
             safe_vi = unicodedata.normalize("NFC", safe_vi)
             return [f"• Nghĩa: {safe_vi}"]
         return []
