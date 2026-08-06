@@ -10,7 +10,6 @@ import os
 import re
 import requests
 import unicodedata
-from functools import lru_cache
 from flask import Flask, request, jsonify
 from deep_translator import GoogleTranslator
 
@@ -48,7 +47,6 @@ def translate_batch(texts: list, source: str, target: str):
         return texts  # Fallback: trả về nguyên bản nếu lỗi
 
 
-@lru_cache(maxsize=100)
 def get_vietnamese_meanings(word: str):
     url = "https://translate.googleapis.com/translate_a/single"
     params = {
@@ -113,7 +111,6 @@ def get_vietnamese_meanings(word: str):
         return []
 
 
-@lru_cache(maxsize=100)
 def lookup_english_word(word: str):
     """Gọi Free Dictionary API lấy phiên âm + audio, lấy nghĩa từ Google Translate."""
     phonetic = ""
