@@ -72,34 +72,17 @@ def lookup_english_word(word: str):
         if not audio_url and p.get("audio"):
             audio_url = p["audio"]
 
-    # Thu thập tối đa 3 nghĩa để dịch 1 lần (batch translation) nhằm tăng tốc độ
-    meanings_data = []
-    definitions_en = []
-    
-    for meaning in entry.get("meanings", [])[:3]:
-        pos = meaning.get("partOfSpeech", "")
-        definitions = meaning.get("definitions", [])
-        if not definitions:
-            continue
-        definition_en = definitions[0].get("definition", "")
-        if not definition_en:
-            continue
-            
-        meanings_data.append({"pos": pos, "en": definition_en})
-        definitions_en.append(definition_en)
-
-    if not meanings_data:
-        return None
-
-    # Dịch tất cả định nghĩa trong 1 lần request
-    definitions_vi = translate_batch(definitions_en, "en", "vi")
+    # Thay vì dịch toàn bộ định nghĩa dài dòng bằng tiếng Anh,
+    # chúng ta dịch trực tiếp từ đó sang tiếng Việt để có nghĩa ngắn gọn (VD: chair -> cái ghế)
+    short_meaning = translate_text(word, "en", "vi")
     
     meanings = []
-    for i, data in enumerate(meanings_data):
-        # Tránh lỗi Markdown của Telegram bằng cách thay thế các ký tự đặc biệt
-        safe_vi = definitions_vi[i].replace("*", "").replace("_", "").replace("`", "")
-        meanings.append(f"• ({data['pos']}) {safe_vi}")
-
+    if short_meaning and short_meaning.lower() != word.lower():
+        # Xóa các ký tự dễ gây lỗi Markdown
+        safe_vi = short_meaning.replace("*", "").replace("_", "").replace("`", "")
+        meanings.append(f"• Nghĩa: {safe_vi}")
+    
+    # Kể cả không có nghĩa (trường hợp hiếm), ta vẫn trả về phonetic và audio
     return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings}
 
 
