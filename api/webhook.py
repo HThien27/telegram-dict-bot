@@ -37,6 +37,15 @@ def translate_text(text: str, source: str, target: str):
         return None
 
 
+def translate_batch(texts: list, source: str, target: str):
+    if not texts:
+        return []
+    try:
+        return GoogleTranslator(source=source, target=target).translate_batch(texts)
+    except Exception:
+        return texts  # Fallback: trả về nguyên bản nếu lỗi
+
+
 def lookup_english_word(word: str):
     """Gọi Free Dictionary API lấy phiên âm + audio + nghĩa, rồi dịch nghĩa sang tiếng Việt."""
     try:
@@ -63,8 +72,10 @@ def lookup_english_word(word: str):
         if not audio_url and p.get("audio"):
             audio_url = p["audio"]
 
-    # Lấy tối đa 3 nghĩa, dịch từng nghĩa sang tiếng Việt
-    meanings = []
+    # Thu thập tối đa 3 nghĩa để dịch 1 lần (batch translation) nhằm tăng tốc độ
+    meanings_data = []
+    definitions_en = []
+    
     for meaning in entry.get("meanings", [])[:3]:
         pos = meaning.get("partOfSpeech", "")
         definitions = meaning.get("definitions", [])
@@ -73,11 +84,21 @@ def lookup_english_word(word: str):
         definition_en = definitions[0].get("definition", "")
         if not definition_en:
             continue
-        definition_vi = translate_text(definition_en, "en", "vi") or definition_en
-        meanings.append(f"• ({pos}) {definition_vi}")
+            
+        meanings_data.append({"pos": pos, "en": definition_en})
+        definitions_en.append(definition_en)
 
-    if not meanings:
+    if not meanings_data:
         return None
+
+    # Dịch tất cả định nghĩa trong 1 lần request
+    definitions_vi = translate_batch(definitions_en, "en", "vi")
+    
+    meanings = []
+    for i, data in enumerate(meanings_data):
+        # Tránh lỗi Markdown của Telegram bằng cách thay thế các ký tự đặc biệt
+        safe_vi = definitions_vi[i].replace("*", "").replace("_", "").replace("`", "")
+        meanings.append(f"• ({data['pos']}) {safe_vi}")
 
     return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings}
 
@@ -95,13 +116,11 @@ def send_message(chat_id, text: str):
     )
 
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Telegram Dictionary Bot is running."
-
-
-@app.route("/api/webhook", methods=["POST"])
+@app.route("/api/webhook", methods=["GET", "POST"])
 def webhook():
+    if request.method == "GET":
+        return "Telegram Dictionary Bot is running on Vercel."
+        
     update = request.get_json(silent=True) or {}
     message = update.get("message")
     if not message:
@@ -127,6 +146,7 @@ def webhook():
         else:
             send_message(chat_id, "Xin lỗi, mình không dịch được từ/câu này 😢")
     else:
+        # Giả định ban đầu là tiếng Anh
         result = lookup_english_word(text.lower())
         if result:
             reply = f"📖 *{text}*\n"
@@ -137,10 +157,16 @@ def webhook():
                 reply += f"\n\n[▶️ Nghe phát âm]({result['audio']})"
             send_message(chat_id, reply)
         else:
-            send_message(
-                chat_id,
-                "Không tìm thấy từ này trong từ điển 😢\n"
-                "Bạn kiểm tra lại chính tả giúp mình nhé.",
-            )
+            # Fallback: Nếu không tìm thấy trong từ điển (có thể là một câu dài hoặc từ viết sai)
+            # -> Dịch thẳng câu tiếng Anh đó sang tiếng Việt
+            translated_to_vi = translate_text(text, "en", "vi")
+            if translated_to_vi and translated_to_vi.lower() != text.lower():
+                send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 {translated_to_vi}")
+            else:
+                send_message(
+                    chat_id,
+                    "Không tìm thấy từ này trong từ điển và cũng không thể dịch được 😢\n"
+                    "Bạn kiểm tra lại chính tả giúp mình nhé.",
+                )
 
     return jsonify({"ok": True})
