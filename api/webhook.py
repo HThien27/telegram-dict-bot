@@ -46,6 +46,40 @@ def translate_batch(texts: list, source: str, target: str):
         return texts  # Fallback: trả về nguyên bản nếu lỗi
 
 
+def get_vietnamese_meanings(word: str):
+    url = "https://translate.googleapis.com/translate_a/single"
+    params = {
+        "client": "gtx",
+        "sl": "en",
+        "tl": "vi",
+        "dt": ["t", "bd"],
+        "q": word
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=5).json()
+        primary = resp[0][0][0]
+        
+        alternatives = []
+        if len(resp) > 1 and resp[1]:
+            for pos_group in resp[1]:
+                pos = pos_group[0]
+                words = pos_group[1][:5]
+                words_str = ", ".join(words).replace("*", "").replace("_", "").replace("`", "")
+                alternatives.append(f"• ({pos}) {words_str}")
+                
+        if alternatives:
+            return alternatives
+        else:
+            safe_vi = primary.replace("*", "").replace("_", "").replace("`", "")
+            return [f"• Nghĩa: {safe_vi}"]
+    except Exception:
+        short = translate_text(word, "en", "vi")
+        if short and short.lower() != word.lower():
+            safe_vi = short.replace("*", "").replace("_", "").replace("`", "")
+            return [f"• Nghĩa: {safe_vi}"]
+        return []
+
+
 def lookup_english_word(word: str):
     """Gọi Free Dictionary API lấy phiên âm + audio + nghĩa, rồi dịch nghĩa sang tiếng Việt."""
     try:
@@ -72,16 +106,8 @@ def lookup_english_word(word: str):
         if not audio_url and p.get("audio"):
             audio_url = p["audio"]
 
-    # Thay vì dịch toàn bộ định nghĩa dài dòng bằng tiếng Anh,
-    # chúng ta dịch trực tiếp từ đó sang tiếng Việt để có nghĩa ngắn gọn (VD: chair -> cái ghế)
-    short_meaning = translate_text(word, "en", "vi")
-    
-    meanings = []
-    if short_meaning and short_meaning.lower() != word.lower():
-        # Xóa các ký tự dễ gây lỗi Markdown
-        safe_vi = short_meaning.replace("*", "").replace("_", "").replace("`", "")
-        meanings.append(f"• Nghĩa: {safe_vi}")
-    
+    meanings = get_vietnamese_meanings(word)
+
     # Kể cả không có nghĩa (trường hợp hiếm), ta vẫn trả về phonetic và audio
     return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings}
 
