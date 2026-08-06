@@ -9,6 +9,7 @@ Chạy trên Vercel Python Serverless Function (webhook mode).
 import os
 import re
 import requests
+import unicodedata
 from flask import Flask, request, jsonify
 from deep_translator import GoogleTranslator
 
@@ -63,19 +64,22 @@ def get_vietnamese_meanings(word: str):
         if len(resp) > 1 and resp[1]:
             for pos_group in resp[1]:
                 pos = pos_group[0]
-                words = pos_group[1][:5]
+                words = pos_group[1][:3]
                 words_str = ", ".join(words).replace("*", "").replace("_", "").replace("`", "")
+                words_str = unicodedata.normalize("NFC", words_str)
                 alternatives.append(f"• ({pos}) {words_str}")
                 
         if alternatives:
             return alternatives
         else:
             safe_vi = primary.replace("*", "").replace("_", "").replace("`", "")
+            safe_vi = unicodedata.normalize("NFC", safe_vi)
             return [f"• Nghĩa: {safe_vi}"]
     except Exception:
         short = translate_text(word, "en", "vi")
         if short and short.lower() != word.lower():
             safe_vi = short.replace("*", "").replace("_", "").replace("`", "")
+            safe_vi = unicodedata.normalize("NFC", safe_vi)
             return [f"• Nghĩa: {safe_vi}"]
         return []
 
