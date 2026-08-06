@@ -10,6 +10,7 @@ import os
 import re
 import requests
 import unicodedata
+from functools import lru_cache
 from flask import Flask, request, jsonify
 from deep_translator import GoogleTranslator
 
@@ -47,6 +48,7 @@ def translate_batch(texts: list, source: str, target: str):
         return texts  # Fallback: trả về nguyên bản nếu lỗi
 
 
+@lru_cache(maxsize=100)
 def get_vietnamese_meanings(word: str):
     url = "https://translate.googleapis.com/translate_a/single"
     params = {
@@ -93,6 +95,8 @@ def get_vietnamese_meanings(word: str):
         if alternatives:
             return alternatives
         else:
+            if primary.lower() == word.lower():
+                return []
             safe_vi = primary.strip()
             if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
             safe_vi = safe_vi.replace("*", "").replace("_", "").replace("`", "")
@@ -109,35 +113,31 @@ def get_vietnamese_meanings(word: str):
         return []
 
 
+@lru_cache(maxsize=100)
 def lookup_english_word(word: str):
-    """Gọi Free Dictionary API lấy phiên âm + audio + nghĩa, rồi dịch nghĩa sang tiếng Việt."""
+    """Gọi Free Dictionary API lấy phiên âm + audio, lấy nghĩa từ Google Translate."""
+    phonetic = ""
+    audio_url = ""
     try:
         resp = requests.get(
             f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=8
         )
-    except requests.RequestException:
-        return None
-
-    if resp.status_code != 200:
-        return None
-
-    try:
-        entry = resp.json()[0]
-    except (ValueError, IndexError, KeyError):
-        return None
-
-    # Lấy phiên âm (ưu tiên field "phonetic", fallback qua danh sách "phonetics")
-    phonetic = entry.get("phonetic", "")
-    audio_url = ""
-    for p in entry.get("phonetics", []):
-        if not phonetic and p.get("text"):
-            phonetic = p["text"]
-        if not audio_url and p.get("audio"):
-            audio_url = p["audio"]
+        if resp.status_code == 200:
+            entry = resp.json()[0]
+            phonetic = entry.get("phonetic", "")
+            for p in entry.get("phonetics", []):
+                if not phonetic and p.get("text"):
+                    phonetic = p["text"]
+                if not audio_url and p.get("audio"):
+                    audio_url = p["audio"]
+    except Exception:
+        pass
 
     meanings = get_vietnamese_meanings(word)
+    
+    if not meanings:
+        return None
 
-    # Kể cả không có nghĩa (trường hợp hiếm), ta vẫn trả về phonetic và audio
     return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings}
 
 
