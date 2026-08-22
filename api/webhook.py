@@ -32,8 +32,11 @@ def ask_gemini(prompt: str):
         resp = requests.post(url, headers=headers, json=payload, timeout=8).json()
         if "candidates" in resp and resp["candidates"]:
             return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
+        elif "error" in resp:
+            error_msg = resp["error"].get("message", "Lỗi không xác định")
+            return f"Lỗi từ Google: {error_msg}"
         else:
-            return "Xin lỗi, AI không thể xử lý câu hỏi này."
+            return "Xin lỗi, AI không thể xử lý câu hỏi này (không rõ nguyên nhân)."
     except Exception as e:
         return f"Xin lỗi, có lỗi xảy ra khi kết nối với AI ({e})."
 
