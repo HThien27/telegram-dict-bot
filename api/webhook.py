@@ -90,16 +90,19 @@ def get_vietnamese_meanings(word: str):
                 words_str = unicodedata.normalize("NFC", words_str)
                 alternatives.append(f"• ({pos_mapped}) {words_str}")
                 
+        safe_vi = primary.strip()
+        if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
+        safe_vi = safe_vi.replace("*", "").replace("_", "").replace("`", "")
+        safe_vi = unicodedata.normalize("NFC", safe_vi)
+        
+        result = []
+        if primary.lower() != word.lower() and safe_vi:
+            result.append(f"• Nghĩa chính: {safe_vi}")
+            
         if alternatives:
-            return alternatives
-        else:
-            if primary.lower() == word.lower():
-                return []
-            safe_vi = primary.strip()
-            if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
-            safe_vi = safe_vi.replace("*", "").replace("_", "").replace("`", "")
-            safe_vi = unicodedata.normalize("NFC", safe_vi)
-            return [f"• Nghĩa: {safe_vi}"]
+            result.extend(alternatives)
+            
+        return result
     except Exception:
         short = translate_text(word, "en", "vi")
         if short and short.lower() != word.lower():
