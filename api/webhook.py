@@ -115,6 +115,7 @@ def lookup_english_word(word: str):
     """Gọi Free Dictionary API lấy phiên âm + audio, lấy nghĩa từ Google Translate."""
     phonetic = ""
     audio_url = ""
+    english_example = ""
     try:
         resp = requests.get(
             f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=8
@@ -127,15 +128,34 @@ def lookup_english_word(word: str):
                     phonetic = p["text"]
                 if not audio_url and p.get("audio"):
                     audio_url = p["audio"]
+            
+            for m in entry.get("meanings", []):
+                for d in m.get("definitions", []):
+                    if d.get("example"):
+                        english_example = d["example"]
+                        break
+                if english_example:
+                    break
     except Exception:
         pass
+
+    if not audio_url:
+        import urllib.parse
+        safe_word = urllib.parse.quote(word)
+        audio_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={safe_word}&tl=en&client=tw-ob"
 
     meanings = get_vietnamese_meanings(word)
     
     if not meanings:
         return None
 
-    return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings}
+    example_text = ""
+    if english_example:
+        example_vi = translate_text(english_example, "en", "vi")
+        if example_vi:
+            example_text = f"💡 *Ví dụ:* _{english_example}_\n({example_vi})"
+
+    return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings, "example": example_text}
 
 
 def send_message(chat_id, text: str):
@@ -188,6 +208,8 @@ def webhook():
             if result["phonetic"]:
                 reply += f"🔊 `{result['phonetic']}`\n\n"
             reply += "\n".join(result["meanings"])
+            if result.get("example"):
+                reply += f"\n\n{result['example']}"
             if result["audio"]:
                 reply += f"\n\n[▶️ Nghe phát âm]({result['audio']})"
             send_message(chat_id, reply)
