@@ -29,7 +29,7 @@ def ask_gemini(prompt: str):
         "contents": [{"parts": [{"text": prompt}]}]
     }
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=8).json()
+        resp = requests.post(url, headers=headers, json=payload, timeout=45).json()
         if "candidates" in resp and resp["candidates"]:
             return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
         elif "error" in resp:
