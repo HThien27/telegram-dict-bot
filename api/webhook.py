@@ -8,6 +8,7 @@ Chạy trên Vercel Python Serverless Function (webhook mode).
 
 import os
 import re
+import time
 import requests
 import unicodedata
 from flask import Flask, request, jsonify
@@ -28,17 +29,25 @@ def ask_gemini(prompt: str):
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
     }
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=45).json()
-        if "candidates" in resp and resp["candidates"]:
-            return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
-        elif "error" in resp:
-            error_msg = resp["error"].get("message", "Lỗi không xác định")
-            return f"Lỗi từ Google: {error_msg}"
-        else:
-            return "Xin lỗi, AI không thể xử lý câu hỏi này (không rõ nguyên nhân)."
-    except Exception as e:
-        return f"Xin lỗi, có lỗi xảy ra khi kết nối với AI ({e})."
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=45).json()
+            if "candidates" in resp and resp["candidates"]:
+                return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
+            elif "error" in resp:
+                error_msg = resp["error"].get("message", "Lỗi không xác định")
+                if "high demand" in error_msg.lower() and attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                return f"Lỗi từ Google: {error_msg}"
+            else:
+                return "Xin lỗi, AI không thể xử lý câu hỏi này (không rõ nguyên nhân)."
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2)
+                continue
+            return f"Xin lỗi, có lỗi xảy ra khi kết nối với AI ({e})."
 
 
 # Regex nhận diện ký tự có dấu tiếng Việt
