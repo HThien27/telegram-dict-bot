@@ -116,11 +116,13 @@ def lookup_english_word(word: str):
     phonetic = ""
     audio_url = ""
     english_example = ""
+    is_valid = False
     try:
         resp = requests.get(
             f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=8
         )
         if resp.status_code == 200:
+            is_valid = True
             entry = resp.json()[0]
             phonetic = entry.get("phonetic", "")
             for p in entry.get("phonetics", []):
@@ -138,6 +140,9 @@ def lookup_english_word(word: str):
                     break
     except Exception:
         pass
+
+    if not is_valid:
+        return {"error": "not_found"}
 
     if not audio_url:
         import urllib.parse
@@ -202,19 +207,27 @@ def webhook():
             send_message(chat_id, "Xin lỗi, mình không dịch được từ/câu này 😢")
     else:
         # Giả định ban đầu là tiếng Anh
-        result = lookup_english_word(text.lower())
-        if result:
-            reply = f"📖 *{text}*\n"
-            if result["phonetic"]:
-                reply += f"🔊 `{result['phonetic']}`\n\n"
-            reply += "\n".join(result["meanings"])
-            if result.get("example"):
-                reply += f"\n\n{result['example']}"
-            if result["audio"]:
-                reply += f"\n\n[▶️ Nghe phát âm]({result['audio']})"
-            send_message(chat_id, reply)
+        words_count = len(text.split())
+        
+        if words_count == 1:
+            result = lookup_english_word(text.lower())
+            if result and not result.get("error"):
+                reply = f"📖 *{text}*\n"
+                if result["phonetic"]:
+                    reply += f"🔊 `{result['phonetic']}`\n\n"
+                reply += "\n".join(result["meanings"])
+                if result.get("example"):
+                    reply += f"\n\n{result['example']}"
+                if result["audio"]:
+                    reply += f"\n\n[▶️ Nghe phát âm]({result['audio']})"
+                send_message(chat_id, reply)
+            else:
+                send_message(
+                    chat_id,
+                    f"❌ Không tìm thấy từ '{text}' trong từ điển.\nCó thể bạn đã viết sai chính tả, bạn kiểm tra lại nhé!"
+                )
         else:
-            # Fallback: Nếu không tìm thấy trong từ điển (có thể là một câu dài hoặc từ viết sai)
+            # Fallback: Nếu là một câu dài
             # -> Dịch thẳng câu tiếng Anh đó sang tiếng Việt
             translated_to_vi = translate_text(text, "en", "vi")
             if translated_to_vi and translated_to_vi.lower() != text.lower():
@@ -222,7 +235,7 @@ def webhook():
             else:
                 send_message(
                     chat_id,
-                    "Không tìm thấy từ này trong từ điển và cũng không thể dịch được 😢\n"
+                    "Không thể dịch được câu này 😢\n"
                     "Bạn kiểm tra lại chính tả giúp mình nhé.",
                 )
 
