@@ -17,6 +17,26 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+def ask_gemini(prompt: str):
+    if not GEMINI_API_KEY:
+        return "Lỗi: Bot chưa được cấu hình GEMINI_API_KEY. Bạn hãy liên hệ Admin để thêm API Key nhé!"
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=8).json()
+        if "candidates" in resp and resp["candidates"]:
+            return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
+        else:
+            return "Xin lỗi, AI không thể xử lý câu hỏi này."
+    except Exception as e:
+        return f"Xin lỗi, có lỗi xảy ra khi kết nối với AI ({e})."
+
 
 # Regex nhận diện ký tự có dấu tiếng Việt
 VIETNAMESE_CHARS = re.compile(
@@ -203,11 +223,16 @@ def webhook():
         return jsonify({"ok": True})
 
     if is_vietnamese(text):
-        translated = translate_text(text, "vi", "en")
-        if translated:
+        if GEMINI_API_KEY:
+            prompt = f"Hãy đóng vai một biên dịch viên xuất sắc. Dịch câu tiếng Việt sau sang tiếng Anh một cách tự nhiên, chuẩn giao tiếp bản xứ nhất (chỉ trả về kết quả dịch, không giải thích dài dòng): '{text}'"
+            translated = ask_gemini(prompt)
             send_message(chat_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
         else:
-            send_message(chat_id, "Xin lỗi, mình không dịch được từ/câu này 😢")
+            translated = translate_text(text, "vi", "en")
+            if translated:
+                send_message(chat_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
+            else:
+                send_message(chat_id, "Xin lỗi, mình không dịch được từ/câu này 😢")
     else:
         # Giả định ban đầu là tiếng Anh
         words_count = len(text.split())
@@ -231,15 +256,27 @@ def webhook():
                 )
         else:
             # Fallback: Nếu là một câu dài
-            # -> Dịch thẳng câu tiếng Anh đó sang tiếng Việt
-            translated_to_vi = translate_text(text, "en", "vi")
-            if translated_to_vi and translated_to_vi.lower() != text.lower():
-                send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 {translated_to_vi}")
-            else:
-                send_message(
-                    chat_id,
-                    "Không thể dịch được câu này 😢\n"
-                    "Bạn kiểm tra lại chính tả giúp mình nhé.",
+            if GEMINI_API_KEY:
+                prompt = (
+                    f"Hãy đóng vai một gia sư tiếng Anh tận tâm. Học sinh vừa viết câu sau: '{text}'. "
+                    "Hãy làm theo các bước sau:\n"
+                    "1. Kiểm tra ngữ pháp và chính tả.\n"
+                    "2. Nếu đúng hoàn toàn: Hãy khen ngợi và dịch sang tiếng Việt.\n"
+                    "3. Nếu sai: Hãy viết lại câu đúng, dịch câu đúng sang tiếng Việt, và giải thích chi tiết (bằng tiếng Việt) tại sao lại sai và quy tắc ngữ pháp đúng là gì.\n"
+                    "Hãy xưng hô là 'mình' và 'bạn'."
                 )
+                analysis = ask_gemini(prompt)
+                send_message(chat_id, f"📖 *Phân tích câu của bạn:*\n\n{analysis}")
+            else:
+                # Dịch thẳng câu tiếng Anh đó sang tiếng Việt
+                translated_to_vi = translate_text(text, "en", "vi")
+                if translated_to_vi and translated_to_vi.lower() != text.lower():
+                    send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 {translated_to_vi}")
+                else:
+                    send_message(
+                        chat_id,
+                        "Không thể dịch được câu này 😢\n"
+                        "Bạn kiểm tra lại chính tả giúp mình nhé.",
+                    )
 
     return jsonify({"ok": True})
