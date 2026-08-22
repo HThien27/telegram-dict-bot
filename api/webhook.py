@@ -270,11 +270,10 @@ def webhook():
             # Fallback: Nếu là một câu dài
             if GEMINI_API_KEY:
                 prompt = (
-                    f"Hãy đóng vai một gia sư tiếng Anh tận tâm. Học sinh vừa viết câu sau: '{text}'. "
-                    "Hãy làm theo các bước sau:\n"
-                    "1. Kiểm tra ngữ pháp và chính tả.\n"
-                    "2. Nếu đúng hoàn toàn: Hãy khen ngợi và dịch sang tiếng Việt.\n"
-                    "3. Nếu sai: Hãy viết lại câu đúng, dịch câu đúng sang tiếng Việt, và giải thích chi tiết (bằng tiếng Việt) tại sao lại sai và quy tắc ngữ pháp đúng là gì.\n"
+                    f"Học sinh vừa viết câu tiếng Anh sau: '{text}'.\n"
+                    "Kiểm tra ngữ pháp và chính tả. Tuân thủ tuyệt đối các quy tắc sau, KHÔNG thêm lời chào hỏi dài dòng:\n"
+                    "1. Nếu đúng hoàn toàn: Khen ngợi ngắn gọn và dịch sang tiếng Việt.\n"
+                    "2. Nếu sai: Bắt đầu ngay bằng câu 'Câu này sai ở [chỉ ra chỗ sai]'. Sau đó viết lại câu đúng, dịch câu đúng sang tiếng Việt, và giải thích ngắn gọn, súc tích lý do tại sao sai.\n"
                     "Hãy xưng hô là 'mình' và 'bạn'."
                 )
                 analysis = ask_gemini(prompt)
