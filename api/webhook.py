@@ -158,21 +158,23 @@ def lookup_english_word(word: str):
         )
         if resp.status_code == 200:
             is_valid = True
-            entry = resp.json()[0]
-            phonetic = entry.get("phonetic", "")
-            for p in entry.get("phonetics", []):
-                if not phonetic and p.get("text"):
-                    phonetic = p["text"]
-                if not audio_url and p.get("audio"):
-                    audio_url = p["audio"]
-            
-            for m in entry.get("meanings", []):
-                for d in m.get("definitions", []):
-                    if d.get("example"):
-                        english_example = d["example"]
-                        break
-                if english_example:
-                    break
+            for entry in resp.json():
+                if not phonetic:
+                    phonetic = entry.get("phonetic", "")
+                for p in entry.get("phonetics", []):
+                    if not phonetic and p.get("text"):
+                        phonetic = p["text"]
+                    if not audio_url and p.get("audio"):
+                        audio_url = p["audio"]
+                
+                if not english_example:
+                    for m in entry.get("meanings", []):
+                        for d in m.get("definitions", []):
+                            if d.get("example"):
+                                english_example = d["example"]
+                                break
+                        if english_example:
+                            break
     except Exception:
         pass
 
@@ -194,6 +196,8 @@ def lookup_english_word(word: str):
         example_vi = translate_text(english_example, "en", "vi")
         if example_vi:
             example_text = f"💡 *Ví dụ:* _{english_example}_\n({example_vi})"
+        else:
+            example_text = f"💡 *Ví dụ:* _{english_example}_"
 
     return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings, "example": example_text}
 
@@ -229,7 +233,7 @@ def webhook():
     if text.startswith("/start"):
         send_message(
             chat_id,
-            "Chào bạn! 👋\nGửi mình một từ tiếng Anh để tra phiên âm + nghĩa, "
+            "Chào bạn! 👋\nGửi mình một từ tiếng Anh để tra phiên âm + nghĩa,\n "
             "hoặc gửi một từ/câu tiếng Việt để dịch sang tiếng Anh.",
         )
         return jsonify({"ok": True})
