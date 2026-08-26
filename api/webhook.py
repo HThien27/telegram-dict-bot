@@ -243,6 +243,24 @@ def webhook():
         return "Telegram Dictionary Bot is running on Vercel."
         
     update = request.get_json(silent=True) or {}
+    
+    # Delegate to background task to free up Telegram's webhook queue
+    if not request.headers.get("X-Background-Task"):
+        try:
+            # Send request to itself and timeout early
+            requests.post(
+                request.url,
+                json=update,
+                headers={"X-Background-Task": "1"},
+                timeout=0.2
+            )
+        except requests.exceptions.ReadTimeout:
+            pass # Expected, Vercel router will continue processing the request
+        except Exception:
+            pass
+            
+        return jsonify({"ok": True})
+        
     message = update.get("message")
     if not message:
         return jsonify({"ok": True})
