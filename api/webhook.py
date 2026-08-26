@@ -24,7 +24,7 @@ def ask_gemini(prompt: str):
     if not GEMINI_API_KEY:
         return "Lỗi: Bot chưa được cấu hình GEMINI_API_KEY. Bạn hãy liên hệ Admin để thêm API Key nhé!"
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
@@ -203,16 +203,38 @@ def lookup_english_word(word: str):
 
 
 def send_message(chat_id, text: str):
-    requests.post(
-        f"{TELEGRAM_API}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": False,
-        },
-        timeout=8,
-    )
+    try:
+        resp = requests.post(
+            f"{TELEGRAM_API}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": False,
+            },
+            timeout=8,
+        ).json()
+        if resp.get("ok"):
+            return resp.get("result", {}).get("message_id")
+    except Exception:
+        pass
+    return None
+
+def edit_message(chat_id, message_id, text: str):
+    try:
+        requests.post(
+            f"{TELEGRAM_API}/editMessageText",
+            json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": False,
+            },
+            timeout=8,
+        )
+    except Exception:
+        pass
 
 
 @app.route("/api/webhook", methods=["GET", "POST"])
@@ -240,9 +262,13 @@ def webhook():
 
     if is_vietnamese(text):
         if GEMINI_API_KEY:
+            msg_id = send_message(chat_id, "⏳ _Đang dịch..._")
             prompt = f"Hãy đóng vai một biên dịch viên xuất sắc. Dịch câu tiếng Việt sau sang tiếng Anh một cách tự nhiên, chuẩn giao tiếp bản xứ nhất (chỉ trả về kết quả dịch, không giải thích dài dòng): '{text}'"
             translated = ask_gemini(prompt)
-            send_message(chat_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
+            if msg_id:
+                edit_message(chat_id, msg_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
+            else:
+                send_message(chat_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
         else:
             translated = translate_text(text, "vi", "en")
             if translated:
@@ -273,6 +299,8 @@ def webhook():
         else:
             # Fallback: Nếu là một câu dài
             if GEMINI_API_KEY:
+                msg_id = send_message(chat_id, "⏳ _Đang phân tích câu của bạn..._")
+                
                 prompt = (
                     f"Học sinh vừa viết câu tiếng Anh sau: '{text}'.\n"
                     "Kiểm tra ngữ pháp và chính tả. Tuân thủ tuyệt đối các quy tắc sau, KHÔNG thêm lời chào hỏi dài dòng:\n"
@@ -281,7 +309,11 @@ def webhook():
                     "Hãy xưng hô là 'mình' và 'bạn'."
                 )
                 analysis = ask_gemini(prompt)
-                send_message(chat_id, f"📖 *Phân tích câu của bạn:*\n\n{analysis}")
+                
+                if msg_id:
+                    edit_message(chat_id, msg_id, f"📖 *Phân tích câu của bạn:*\n\n{analysis}")
+                else:
+                    send_message(chat_id, f"📖 *Phân tích câu của bạn:*\n\n{analysis}")
             else:
                 # Dịch thẳng câu tiếng Anh đó sang tiếng Việt
                 translated_to_vi = translate_text(text, "en", "vi")
