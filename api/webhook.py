@@ -297,7 +297,8 @@ def webhook():
         # Giả định ban đầu là tiếng Anh
         words_count = len(text.split())
         
-        if words_count == 1:
+        # Với cụm từ ngắn (<= 3 từ), ưu tiên tra từ điển trước
+        if words_count <= 3:
             result = lookup_english_word(text.lower())
             if result and not result.get("error"):
                 reply = f"📖 *{text}*\n"
@@ -310,12 +311,23 @@ def webhook():
                     reply += f"\n\n[▶️ Nghe phát âm]({result['audio']})"
                 send_message(chat_id, reply)
             else:
-                send_message(
-                    chat_id,
-                    f"❌ Không tìm thấy từ '{text}' trong từ điển.\nCó thể bạn đã viết sai chính tả, bạn kiểm tra lại nhé!"
-                )
-        else:
-            # Fallback: Nếu là một câu dài
+                # Không có trong từ điển, dùng Google Translate dịch nghĩa chay
+                translated_to_vi = translate_text(text, "en", "vi")
+                if translated_to_vi and translated_to_vi.lower() != text.lower():
+                    send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 {translated_to_vi}")
+                elif words_count == 1:
+                    # Nếu 1 từ mà không dịch được thì báo lỗi
+                    send_message(
+                        chat_id,
+                        f"❌ Không tìm thấy từ '{text}'.\nCó thể bạn đã viết sai chính tả, bạn kiểm tra lại nhé!"
+                    )
+                else:
+                    # Nếu 2-3 từ mà dịch Google lỗi thì đẩy xuống dùng Gemini phân tích câu
+                    words_count = 100 # trick để nhảy xuống khối xử lý câu bên dưới
+                    pass
+                    
+        # Xử lý cho câu dài (phân tích ngữ pháp)
+        if words_count > 3:
             if GEMINI_API_KEY:
                 msg_id = send_message(chat_id, "⏳ _Đang phân tích câu của bạn..._")
                 
