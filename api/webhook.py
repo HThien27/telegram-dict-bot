@@ -291,6 +291,35 @@ def webhook():
         )
         return jsonify({"ok": True})
 
+    if text.startswith("/debug"):
+        debug_msg = "🔍 <b>DEBUG INFO:</b>\n"
+        # 1. Test Dictionary API
+        try:
+            r = requests.get("https://api.dictionaryapi.dev/api/v2/entries/en/hello", timeout=5)
+            debug_msg += f"1. Dictionary API: {r.status_code}\n"
+        except Exception as e:
+            debug_msg += f"1. Dictionary API Error: {type(e).__name__}\n"
+        
+        # 2. Test Google Translate
+        try:
+            r2 = translate_text("hello", "en", "vi")
+            debug_msg += f"2. Google Translate: {'OK' if r2 else 'Failed'}\n"
+        except Exception as e:
+            debug_msg += f"2. Google Translate Error: {type(e).__name__}\n"
+
+        # 3. Test Gemini
+        if GEMINI_API_KEY:
+            try:
+                g = ask_gemini("Say 'OK' if you hear this.")
+                debug_msg += f"3. Gemini: {'OK' if g else 'Failed'}\n"
+            except Exception as e:
+                debug_msg += f"3. Gemini Error: {type(e).__name__}\n"
+        else:
+            debug_msg += "3. Gemini: LỖI (CHƯA CẤU HÌNH API KEY!)\n"
+            
+        send_message(chat_id, debug_msg)
+        return jsonify({"ok": True})
+
     if is_vietnamese(text):
         if GEMINI_API_KEY:
             msg_id = send_message(chat_id, "⏳ <i>Đang dịch...</i>")
