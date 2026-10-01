@@ -141,14 +141,14 @@ def get_vietnamese_meanings(word: str):
         return []
 
 def lookup_english_word(word: str):
-    """Gọi Free Dictionary API lấy phiên âm + audio, lấy nghĩa từ Google Translate."""
+    """Gọi Free Dictionary API, nếu lỗi thì dùng Gemini."""
     phonetic = ""
     audio_url = ""
     english_example = ""
     is_valid = False
     try:
         resp = requests.get(
-            f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=5
+            f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=4
         )
         if resp.status_code == 200:
             is_valid = True
@@ -172,31 +172,43 @@ def lookup_english_word(word: str):
     except Exception:
         pass
 
-    if not is_valid:
-        return {"error": "not_found"}
-
+    import urllib.parse
+    safe_word = urllib.parse.quote(word)
     if not audio_url:
-        import urllib.parse
-        safe_word = urllib.parse.quote(word)
         audio_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={safe_word}&tl=en&client=tw-ob"
 
-    meanings = get_vietnamese_meanings(word)
-    
-    if not meanings:
-        meanings = ["• Nghĩa: (Hiện tại không thể dịch sang tiếng Việt)"]
+    if is_valid:
+        meanings = get_vietnamese_meanings(word)
+        if not meanings:
+            meanings = ["• Nghĩa: (Hiện tại không thể dịch sang tiếng Việt)"]
 
-    example_text = ""
-    if english_example:
-        example_vi = translate_text(english_example, "en", "vi")
-        # Use HTML formatting
-        english_example_escaped = english_example.replace("<", "&lt;").replace(">", "&gt;")
-        if example_vi:
-             example_vi_escaped = example_vi.replace("<", "&lt;").replace(">", "&gt;")
-             example_text = f"💡 <b>Ví dụ:</b> <i>{english_example_escaped}</i>\n({example_vi_escaped})"
-        else:
-             example_text = f"💡 <b>Ví dụ:</b> <i>{english_example_escaped}</i>"
+        example_text = ""
+        if english_example:
+            example_vi = translate_text(english_example, "en", "vi")
+            english_example_escaped = english_example.replace("<", "&lt;").replace(">", "&gt;")
+            if example_vi:
+                 example_vi_escaped = example_vi.replace("<", "&lt;").replace(">", "&gt;")
+                 example_text = f"💡 <b>Ví dụ:</b> <i>{english_example_escaped}</i>\n({example_vi_escaped})"
+            else:
+                 example_text = f"💡 <b>Ví dụ:</b> <i>{english_example_escaped}</i>"
 
-    return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings, "example": example_text}
+        return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings, "example": example_text}
+
+    # FALLBACK: Nếu Free Dictionary chết (bị Vercel block/timeout), nhờ luôn Gemini làm từ điển!
+    if GEMINI_API_KEY:
+        prompt = (
+            f"Đóng vai từ điển, cung cấp thông tin cho từ tiếng Anh '{word}' theo đúng định dạng sau:\n"
+            "🔊 Phiên âm: /.../\n"
+            "📖 Nghĩa: (các nghĩa chính)\n"
+            "💡 Ví dụ: (1 câu ví dụ tiếng Anh)\n"
+            "🇻🇳 Dịch ví dụ: (dịch câu ví dụ)\n"
+            "Chỉ in ra kết quả như định dạng, không dùng markdown, không chào hỏi, sử dụng các thẻ HTML <b>, <i>, <code> nếu cần nhấn mạnh."
+        )
+        gemini_fallback = ask_gemini(prompt)
+        if "lỗi" not in gemini_fallback.lower() and len(gemini_fallback) > 10:
+             return {"is_gemini": True, "text": gemini_fallback, "audio": audio_url}
+
+    return {"error": "not_found"}
 
 def send_message(chat_id, text: str):
     try:
@@ -343,16 +355,20 @@ def webhook():
         if words_count <= 3:
             result = lookup_english_word(text.lower())
             if result and not result.get("error"):
-                # Dùng HTML Format
-                reply = f"📖 <b>{text}</b>\n"
-                if result["phonetic"]:
-                    reply += f"🔊 <code>{result['phonetic']}</code>\n\n"
-                reply += "\n".join(result["meanings"])
-                if result.get("example"):
-                    reply += f"\n\n{result['example']}"
-                if result["audio"]:
-                    reply += f"\n\n<a href='{result['audio']}'>▶️ Nghe phát âm</a>"
-                send_message(chat_id, reply)
+                if result.get("is_gemini"):
+                    reply = f"📖 <b>{text}</b>\n\n{result['text']}\n\n<a href='{result['audio']}'>▶️ Nghe phát âm</a>"
+                    send_message(chat_id, reply)
+                else:
+                    # Dùng HTML Format
+                    reply = f"📖 <b>{text}</b>\n"
+                    if result["phonetic"]:
+                        reply += f"🔊 <code>{result['phonetic']}</code>\n\n"
+                    reply += "\n".join(result["meanings"])
+                    if result.get("example"):
+                        reply += f"\n\n{result['example']}"
+                    if result["audio"]:
+                        reply += f"\n\n<a href='{result['audio']}'>▶️ Nghe phát âm</a>"
+                    send_message(chat_id, reply)
             else:
                 # Không có trong từ điển, dùng Google Translate dịch nghĩa chay
                 translated_to_vi = translate_text(text, "en", "vi")
