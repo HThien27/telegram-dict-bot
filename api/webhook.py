@@ -183,7 +183,7 @@ def lookup_english_word(word: str):
     meanings = get_vietnamese_meanings(word)
     
     if not meanings:
-        return None
+        meanings = ["• Nghĩa: (Hiện tại không thể dịch sang tiếng Việt)"]
 
     example_text = ""
     if english_example:
