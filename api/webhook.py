@@ -19,33 +19,37 @@ app = Flask(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Nên setup biến môi trường này trên Vercel và setWebhook với secret_token tương ứng
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 
 def ask_gemini(prompt: str):
     if not GEMINI_API_KEY:
         return "Lỗi: Bot chưa được cấu hình GEMINI_API_KEY. Bạn hãy liên hệ Admin để thêm API Key nhé!"
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
     }
-    max_retries = 3
+    max_retries = 2
     for attempt in range(max_retries):
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=45).json()
+            resp = requests.post(url, headers=headers, json=payload, timeout=8).json()
             if "candidates" in resp and resp["candidates"]:
                 return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
             elif "error" in resp:
                 error_msg = resp["error"].get("message", "Lỗi không xác định")
                 if "high demand" in error_msg.lower() and attempt < max_retries - 1:
-                    time.sleep(2)
+                    time.sleep(1)
                     continue
                 return f"Lỗi từ Google: {error_msg}"
             else:
                 return "Xin lỗi, AI không thể xử lý câu hỏi này (không rõ nguyên nhân)."
+        except requests.exceptions.Timeout:
+             return "Xin lỗi, AI phản hồi quá chậm. Vui lòng thử lại sau."
         except Exception as e:
             if attempt < max_retries - 1:
-                time.sleep(2)
+                time.sleep(1)
                 continue
             return f"Xin lỗi, có lỗi xảy ra khi kết nối với AI ({e})."
 
@@ -57,7 +61,6 @@ VIETNAMESE_CHARS = re.compile(
     re.IGNORECASE,
 )
 
-
 def is_vietnamese(text: str) -> bool:
     """Đoán input là tiếng Việt nếu có ký tự dấu tiếng Việt."""
     return bool(VIETNAMESE_CHARS.search(text))
@@ -68,16 +71,6 @@ def translate_text(text: str, source: str, target: str):
         return GoogleTranslator(source=source, target=target).translate(text)
     except Exception:
         return None
-
-
-def translate_batch(texts: list, source: str, target: str):
-    if not texts:
-        return []
-    try:
-        return GoogleTranslator(source=source, target=target).translate_batch(texts)
-    except Exception:
-        return texts  # Fallback: trả về nguyên bản nếu lỗi
-
 
 def get_vietnamese_meanings(word: str):
     url = "https://translate.googleapis.com/translate_a/single"
@@ -97,7 +90,6 @@ def get_vietnamese_meanings(word: str):
             for pos_group in resp[1]:
                 pos = pos_group[0]
                 
-                # Map part of speech to abbreviations
                 pos_mapped = {
                     "noun": "N",
                     "verb": "V",
@@ -111,20 +103,20 @@ def get_vietnamese_meanings(word: str):
                 
                 words = pos_group[1][:3]
                 
-                # Viết hoa chữ cái đầu tiên của từng nghĩa
                 capitalized_words = []
                 for w in words:
                     w = w.strip()
                     if w:
                         capitalized_words.append(w[0].upper() + w[1:])
                 
-                words_str = ", ".join(capitalized_words).replace("*", "").replace("_", "").replace("`", "")
+                # HTML escape/replace instead of markdown
+                words_str = ", ".join(capitalized_words).replace("<", "&lt;").replace(">", "&gt;")
                 words_str = unicodedata.normalize("NFC", words_str)
                 alternatives.append(f"• ({pos_mapped}) {words_str}")
                 
         safe_vi = primary.strip()
         if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
-        safe_vi = safe_vi.replace("*", "").replace("_", "").replace("`", "")
+        safe_vi = safe_vi.replace("<", "&lt;").replace(">", "&gt;")
         safe_vi = unicodedata.normalize("NFC", safe_vi)
         
         result = []
@@ -140,11 +132,10 @@ def get_vietnamese_meanings(word: str):
         if short and short.lower() != word.lower():
             safe_vi = short.strip()
             if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
-            safe_vi = safe_vi.replace("*", "").replace("_", "").replace("`", "")
+            safe_vi = safe_vi.replace("<", "&lt;").replace(">", "&gt;")
             safe_vi = unicodedata.normalize("NFC", safe_vi)
             return [f"• Nghĩa: {safe_vi}"]
         return []
-
 
 def lookup_english_word(word: str):
     """Gọi Free Dictionary API lấy phiên âm + audio, lấy nghĩa từ Google Translate."""
@@ -154,7 +145,7 @@ def lookup_english_word(word: str):
     is_valid = False
     try:
         resp = requests.get(
-            f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=8
+            f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=5
         )
         if resp.status_code == 200:
             is_valid = True
@@ -194,13 +185,15 @@ def lookup_english_word(word: str):
     example_text = ""
     if english_example:
         example_vi = translate_text(english_example, "en", "vi")
+        # Use HTML formatting
+        english_example_escaped = english_example.replace("<", "&lt;").replace(">", "&gt;")
         if example_vi:
-            example_text = f"💡 *Ví dụ:* _{english_example}_\n({example_vi})"
+             example_vi_escaped = example_vi.replace("<", "&lt;").replace(">", "&gt;")
+             example_text = f"💡 <b>Ví dụ:</b> <i>{english_example_escaped}</i>\n({example_vi_escaped})"
         else:
-            example_text = f"💡 *Ví dụ:* _{english_example}_"
+             example_text = f"💡 <b>Ví dụ:</b> <i>{english_example_escaped}</i>"
 
     return {"phonetic": phonetic, "audio": audio_url, "meanings": meanings, "example": example_text}
-
 
 def send_message(chat_id, text: str):
     try:
@@ -209,10 +202,10 @@ def send_message(chat_id, text: str):
             json={
                 "chat_id": chat_id,
                 "text": text,
-                "parse_mode": "Markdown",
+                "parse_mode": "HTML",
                 "disable_web_page_preview": False,
             },
-            timeout=8,
+            timeout=5,
         ).json()
         if resp.get("ok"):
             return resp.get("result", {}).get("message_id")
@@ -228,39 +221,56 @@ def edit_message(chat_id, message_id, text: str):
                 "chat_id": chat_id,
                 "message_id": message_id,
                 "text": text,
-                "parse_mode": "Markdown",
+                "parse_mode": "HTML",
                 "disable_web_page_preview": False,
             },
-            timeout=8,
+            timeout=5,
         )
     except Exception:
         pass
 
+def analyze_english_sentence(chat_id, text: str):
+    """Phân tích câu tiếng Anh bằng Gemini"""
+    if not GEMINI_API_KEY:
+        # Fallback dịch nếu không có Gemini
+        translated_to_vi = translate_text(text, "en", "vi")
+        if translated_to_vi and translated_to_vi.lower() != text.lower():
+            send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 {translated_to_vi}")
+        else:
+            send_message(
+                chat_id,
+                "Không thể dịch được câu này 😢\nBạn kiểm tra lại chính tả giúp mình nhé."
+            )
+        return
+
+    msg_id = send_message(chat_id, "⏳ <i>Đang phân tích câu của bạn...</i>")
+    
+    prompt = (
+        f"Học sinh vừa viết câu tiếng Anh sau: '{text}'.\n"
+        "Kiểm tra ngữ pháp và chính tả. Tuân thủ tuyệt đối các quy tắc sau, KHÔNG thêm lời chào hỏi dài dòng:\n"
+        "1. Nếu đúng hoàn toàn: Khen ngợi ngắn gọn và dịch sang tiếng Việt.\n"
+        "2. Nếu sai: Bắt đầu ngay bằng câu 'Câu này sai ở [chỉ ra chỗ sai]'. Sau đó viết lại câu đúng (phải IN ĐẬM câu đúng bằng thẻ HTML <b>câu đúng</b>), dịch câu đúng sang tiếng Việt, và giải thích ngắn gọn, súc tích lý do tại sao sai.\n"
+        "Hãy xưng hô là 'mình' và 'bạn'. Tuyệt đối không dùng markdown, hãy dùng HTML (<b>, <i>, <code>)."
+    )
+    analysis = ask_gemini(prompt)
+    
+    reply_text = f"📖 <b>Phân tích câu của bạn:</b>\n\n{analysis}"
+    if msg_id:
+        edit_message(chat_id, msg_id, reply_text)
+    else:
+        send_message(chat_id, reply_text)
 
 @app.route("/api/webhook", methods=["GET", "POST"])
 def webhook():
     if request.method == "GET":
         return "Telegram Dictionary Bot is running on Vercel."
         
+    # Check Webhook Secret (Nâng cao bảo mật)
+    if WEBHOOK_SECRET and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != WEBHOOK_SECRET:
+         return jsonify({"error": "Unauthorized"}), 403
+
     update = request.get_json(silent=True) or {}
     
-    # Delegate to background task to free up Telegram's webhook queue
-    if not request.headers.get("X-Background-Task"):
-        try:
-            # Send request to itself and timeout early
-            requests.post(
-                request.url,
-                json=update,
-                headers={"X-Background-Task": "1"},
-                timeout=0.2
-            )
-        except requests.exceptions.ReadTimeout:
-            pass # Expected, Vercel router will continue processing the request
-        except Exception:
-            pass
-            
-        return jsonify({"ok": True})
-        
     message = update.get("message")
     if not message:
         return jsonify({"ok": True})
@@ -274,41 +284,42 @@ def webhook():
         send_message(
             chat_id,
             "Chào bạn! 👋\nGửi mình một từ tiếng Anh để tra phiên âm + nghĩa,\n "
-            "hoặc gửi một từ/câu tiếng Việt để dịch sang tiếng Anh.",
+            "hoặc gửi một từ/câu tiếng Việt để dịch sang tiếng Anh."
         )
         return jsonify({"ok": True})
 
     if is_vietnamese(text):
         if GEMINI_API_KEY:
-            msg_id = send_message(chat_id, "⏳ _Đang dịch..._")
-            prompt = f"Hãy đóng vai một biên dịch viên xuất sắc. Dịch câu tiếng Việt sau sang tiếng Anh một cách tự nhiên, chuẩn giao tiếp bản xứ nhất (chỉ trả về kết quả dịch, không giải thích dài dòng): '{text}'"
+            msg_id = send_message(chat_id, "⏳ <i>Đang dịch...</i>")
+            prompt = f"Hãy đóng vai một biên dịch viên xuất sắc. Dịch câu tiếng Việt sau sang tiếng Anh một cách tự nhiên, chuẩn giao tiếp bản xứ nhất (chỉ trả về kết quả dịch, không giải thích dài dòng, không dùng markdown, giữ nguyên text thuần): '{text}'"
             translated = ask_gemini(prompt)
+            reply = f"🇻🇳 {text}\n🇬🇧 <b>{translated}</b>"
             if msg_id:
-                edit_message(chat_id, msg_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
+                edit_message(chat_id, msg_id, reply)
             else:
-                send_message(chat_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
+                send_message(chat_id, reply)
         else:
             translated = translate_text(text, "vi", "en")
             if translated:
-                send_message(chat_id, f"🇻🇳 {text}\n🇬🇧 {translated}")
+                send_message(chat_id, f"🇻🇳 {text}\n🇬🇧 <b>{translated}</b>")
             else:
                 send_message(chat_id, "Xin lỗi, mình không dịch được từ/câu này 😢")
     else:
-        # Giả định ban đầu là tiếng Anh
         words_count = len(text.split())
         
         # Với cụm từ ngắn (<= 3 từ), ưu tiên tra từ điển trước
         if words_count <= 3:
             result = lookup_english_word(text.lower())
             if result and not result.get("error"):
-                reply = f"📖 *{text}*\n"
+                # Dùng HTML Format
+                reply = f"📖 <b>{text}</b>\n"
                 if result["phonetic"]:
-                    reply += f"🔊 `{result['phonetic']}`\n\n"
+                    reply += f"🔊 <code>{result['phonetic']}</code>\n\n"
                 reply += "\n".join(result["meanings"])
                 if result.get("example"):
                     reply += f"\n\n{result['example']}"
                 if result["audio"]:
-                    reply += f"\n\n[▶️ Nghe phát âm]({result['audio']})"
+                    reply += f"\n\n<a href='{result['audio']}'>▶️ Nghe phát âm</a>"
                 send_message(chat_id, reply)
             else:
                 # Không có trong từ điển, dùng Google Translate dịch nghĩa chay
@@ -319,41 +330,13 @@ def webhook():
                     # Nếu 1 từ mà không dịch được thì báo lỗi
                     send_message(
                         chat_id,
-                        f"❌ Không tìm thấy từ '{text}'.\nCó thể bạn đã viết sai chính tả, bạn kiểm tra lại nhé!"
+                        f"❌ Không tìm thấy từ '<b>{text}</b>'.\nCó thể bạn đã viết sai chính tả, bạn kiểm tra lại nhé!"
                     )
                 else:
-                    # Nếu 2-3 từ mà dịch Google lỗi thì đẩy xuống dùng Gemini phân tích câu
-                    words_count = 100 # trick để nhảy xuống khối xử lý câu bên dưới
-                    pass
-                    
-        # Xử lý cho câu dài (phân tích ngữ pháp)
-        if words_count > 3:
-            if GEMINI_API_KEY:
-                msg_id = send_message(chat_id, "⏳ _Đang phân tích câu của bạn..._")
-                
-                prompt = (
-                    f"Học sinh vừa viết câu tiếng Anh sau: '{text}'.\n"
-                    "Kiểm tra ngữ pháp và chính tả. Tuân thủ tuyệt đối các quy tắc sau, KHÔNG thêm lời chào hỏi dài dòng:\n"
-                    "1. Nếu đúng hoàn toàn: Khen ngợi ngắn gọn và dịch sang tiếng Việt.\n"
-                    "2. Nếu sai: Bắt đầu ngay bằng câu 'Câu này sai ở [chỉ ra chỗ sai]'. Sau đó viết lại câu đúng (phải IN ĐẬM câu đúng bằng markdown `**câu đúng**`), dịch câu đúng sang tiếng Việt, và giải thích ngắn gọn, súc tích lý do tại sao sai.\n"
-                    "Hãy xưng hô là 'mình' và 'bạn'."
-                )
-                analysis = ask_gemini(prompt)
-                
-                if msg_id:
-                    edit_message(chat_id, msg_id, f"📖 *Phân tích câu của bạn:*\n\n{analysis}")
-                else:
-                    send_message(chat_id, f"📖 *Phân tích câu của bạn:*\n\n{analysis}")
-            else:
-                # Dịch thẳng câu tiếng Anh đó sang tiếng Việt
-                translated_to_vi = translate_text(text, "en", "vi")
-                if translated_to_vi and translated_to_vi.lower() != text.lower():
-                    send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 {translated_to_vi}")
-                else:
-                    send_message(
-                        chat_id,
-                        "Không thể dịch được câu này 😢\n"
-                        "Bạn kiểm tra lại chính tả giúp mình nhé.",
-                    )
+                    # Cụm 2-3 từ không có trong từ điển -> Phân tích câu
+                    analyze_english_sentence(chat_id, text)
+        else:
+            # Xử lý cho câu dài (phân tích ngữ pháp)
+            analyze_english_sentence(chat_id, text)
 
     return jsonify({"ok": True})
