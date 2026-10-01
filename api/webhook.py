@@ -129,7 +129,10 @@ def get_vietnamese_meanings(word: str):
         return result
     except Exception:
         short = translate_text(word, "en", "vi")
-        if short and short.lower() != word.lower():
+        if not short or short.lower() == word.lower():
+            if GEMINI_API_KEY:
+                short = ask_gemini(f"Dịch từ tiếng Anh sau sang tiếng Việt (chỉ trả lời nghĩa ngắn gọn nhất, không giải thích): '{word}'")
+        if short and short.lower() != word.lower() and "lỗi" not in short.lower():
             safe_vi = short.strip()
             if safe_vi: safe_vi = safe_vi[0].upper() + safe_vi[1:]
             safe_vi = safe_vi.replace("<", "&lt;").replace(">", "&gt;")
@@ -324,8 +327,14 @@ def webhook():
             else:
                 # Không có trong từ điển, dùng Google Translate dịch nghĩa chay
                 translated_to_vi = translate_text(text, "en", "vi")
+                if not translated_to_vi or translated_to_vi.lower() == text.lower():
+                    if GEMINI_API_KEY:
+                        translated_to_vi = ask_gemini(f"Dịch ngắn gọn từ/cụm từ sau sang tiếng Việt: '{text}'. Trả lời trực tiếp bằng nghĩa tiếng Việt, không giải thích.")
+                        if "lỗi" in translated_to_vi.lower() or not translated_to_vi:
+                            translated_to_vi = None
+
                 if translated_to_vi and translated_to_vi.lower() != text.lower():
-                    send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 {translated_to_vi}")
+                    send_message(chat_id, f"🇬🇧 {text}\n🇻🇳 <b>{translated_to_vi}</b>")
                 elif words_count == 1:
                     # Nếu 1 từ mà không dịch được thì báo lỗi
                     send_message(
